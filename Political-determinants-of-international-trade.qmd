@@ -1,0 +1,299 @@
+---
+title: "Political Determinants of International Trade: Visualization"
+author: "Nikita Egorov"
+format:
+    html:
+      code-fold: true
+      code-summary: "Show Code"
+      code-visibility: folded 
+editor: visual
+---
+
+# How do politics affect international trade?
+
+**Original study**: **The Political Determinants of International Trade: The Major Powers, 1907–1990 (**[James D. Morrow](https://www.cambridge.org/core/search?filters%5BauthorTerms%5D=James%20D.%20Morrow&eventCode=SE-AU), [Randolph M. Siverson](https://www.cambridge.org/core/search?filters%5BauthorTerms%5D=Randolph%20M.%20Siverson&eventCode=SE-AU) and [Tressa E. Tabares](https://www.cambridge.org/core/search?filters%5BauthorTerms%5D=Tressa%20E.%20Tabares&eventCode=SE-AU)**)**
+
+Data can be accessed on [Harvard Dataverse](https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/P9UL3O).
+
+It is hard to deny that politics influences international trade. But which geopolitical factors matter the most? In their study, *The Political Determinants of International Trade*, James D. Morrow, Randolph M. Siverson, and Tressa E. Tabares explore this question.
+
+Using 20th-century data on trade volumes among major political powers, the authors test three key arguments about the relationship between politics and trade:
+
+1.  **Political allies trade more**: States with aligned interests are more likely to engage in trade.
+
+2.  **Democracies trade more**: Democratic states are more inclined to trade with one another than with non-democracies.
+
+3.  **Political rivalry reduces trade**: Rivalries, especially in a bipolar system, hinder trade flows between states.
+
+## Data
+
+The dataset includes annual observations of trade flows between all directed pairs of major powers (dyads) from 1907 to 1990, excluding the years during the two world wars and the year immediately following each war. The major powers include the United States, the United Kingdom, France, Germany, Russia and Italy.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,        # Show code in the output
+  message = FALSE,    # Suppress messages globally
+  warning = FALSE     # Suppress warnings globally
+)
+```
+
+```{r}
+library('dplyr')
+library('ggplot2')
+library("magrittr")
+library('ggthemes')
+library("plotly")
+library('knitr')
+
+trade <- read.csv(file = "Trade.csv", header = TRUE)
+# knitr::kable(head(trade))
+```
+
+```{r}
+## create the categorical variables based on years
+periods = c("Pre-WW1", "20s", "30s", "Post-WW2+50s", "60s", "70s", "80s")
+
+trade <- trade %>%
+  mutate(
+    DECADE = case_when(YEAR <= 1913 ~ "Pre-WW1",
+                       YEAR >= 1920 & YEAR < 1930 ~ "20s",
+                       YEAR >= 1930 & YEAR <= 1939 ~ "30s",
+                       YEAR >= 1947 & YEAR < 1960 ~ "Post-WW2+50s",
+                       YEAR >= 1960 & YEAR < 1970 ~ "60s",
+                       YEAR >= 1970 & YEAR < 1980 ~ "70s",
+                       YEAR >= 1980 & YEAR <= 1990  ~ "80s",
+                       TRUE ~ NA_character_
+    ),
+    DECADE = factor(DECADE, levels = periods)
+  ) %>%
+  mutate(YEAR = as.factor(YEAR))
+
+trade %>%
+  count(DECADE) %>%
+  kable(
+    caption = "Observations by Decade",
+    col.names = c("Decade", "Count"),
+    align = "lc"
+  )
+```
+
+```{r}
+trade_summary <- trade %>%
+  group_by(DECADE) %>%
+  summarise(total_exports = sum(XIJL, na.rm = TRUE))
+
+export_volume <- trade_summary %>%
+  ggplot(aes(x = DECADE, y = total_exports)) +
+  geom_col(fill = 'lightblue', color = 'navy') +
+  scale_x_discrete(guide = guide_axis(angle = 20)) +
+  theme_stata() +
+  labs(
+    x = "Decade",
+    y = "Total Exports (million $)",
+    title = "Total Trade Volume by Decade"
+  )
+
+ggplotly(export_volume)
+```
+
+# Do democracies trade more with each other?
+
+One of the key assumptions tested in the study is that states with similar political regimes—particularly democratic dyads—are more likely to engage in trade. This hypothesis suggests that shared democratic values foster trust, reduce transaction costs, and create a favorable environment for trade partnerships.\
+\
+In the study authors code a dyad democratic if both trading states were ranked 6+ on **Gurr's Institutionalized Democracy** scale.
+
+```{r}
+trade <- trade %>%
+  mutate(Dem = case_when(DEMDL == 0 ~ "Non-democratic dyad",
+                         DEMDL != 0 ~ "Democratic dyad"))
+
+trade %>%
+  count(Dem) %>%
+  kable(
+    caption = "Number of observations per dyad type",
+    col.names = c("Decade", "Count"),
+    align = "lc"
+  )
+```
+
+```{r}
+dyad_summary <- trade %>%
+  group_by(DECADE, Dem) %>%
+  summarise(total_exports = sum(XIJL, na.rm = TRUE))
+
+volume_dyads <- ggplot(data = dyad_summary,
+         mapping = aes(x = DECADE,
+                       y = total_exports, fill = Dem))  +
+  geom_col(position = "dodge") +
+  scale_x_discrete(guide = guide_axis(angle = 20), limits=periods) +
+  theme_stata() +
+  labs(x = "Decade",
+       y = "Exports, constant mln $",
+       title = "Trade volume: Democratic partners vs. others")
+
+ggplotly(volume_dyads)
+```
+
+```{r}
+
+dembar_faceted <- ggplot(data = dyad_summary,
+       mapping = aes(x = total_exports, y = DECADE, color = Dem)) +
+  geom_col() +
+  theme_stata() +
+  labs(x = "Exports, constant mln $",
+       y = "Decades",
+       title = "Exports of dyads") +
+  facet_wrap( ~ Dem,
+              nrow = 1) +
+  scale_y_discrete(guide = guide_axis(angle = 30), limits=periods) +
+  theme(legend.position='none')
+
+ggplotly(dembar_faceted)
+```
+
+```{r}
+## Histograms. Distribution of ind. variables
+## 5 Histogram for Similarity of relations
+
+# TAUL <- ggplot(data = trade,
+#        mapping = aes(x = TAUL)) +
+#   geom_histogram(bins=15,
+#   color = "#f94552",
+#   fill = "#fa626d",
+#   alpha = 0.5) + 
+#   labs(x = "Similarity of relations", y = "Distribution", title = "Similarity of relations",
+#   subtitle = "TAUL independent variable") +
+#   theme_economist()
+# 
+# ggplotly(TAUL)
+```
+
+# Do political rivals trade less?
+
+```{r}
+tradeDisp <- trade %>%
+  mutate(Dis = case_when(MIDL == 0 ~ "No disputes",
+                         MIDL != 0 ~ "Disputes occured"))
+ggplot(data = tradeDisp,
+       mapping = aes(x = DECADE, y = XIJL, fill = Dis, color = Dis)) +
+  geom_col() +
+  theme_stata() +
+  labs(x = "Decades",
+       y = "Volume of exports",
+       title = "Exports of dyads",
+       subtitle = "Factor of interstate militarized disputes") +
+  facet_wrap( ~ Dis, nrow = 1) +
+  scale_x_discrete(guide = guide_axis(angle = 30), limits=periods) +
+  theme(legend.position='none')
+```
+
+```{r}
+## Faceted graph for distance between nations in the trading dyad
+# mean(trade$DISTANCL)
+```
+
+```{r}
+# tradeDist <- trade %>%
+#   mutate(Far = case_when(DISTANCL <= 7.6 ~ "Close",
+#                          DISTANCL > 7.6 ~ "Far"))
+# ggplot(data = tradeDist,
+#        mapping = aes(x = XIJL, y = DECADE, color = Far, fill = Far)) +
+#   geom_col() +
+#   theme_stata() +
+#   labs(x = "Volume of exports",
+#        y = "Decade",
+#        title = "Exports of dyads",
+#        subtitle = "Factor of distance between trading partners") +
+#   facet_wrap( ~ Far,
+#               nrow = 1) +
+#   scale_y_discrete(guide = guide_axis(angle = 30), limits=periods) +
+#   theme(legend.position='none')
+```
+
+```{r}
+## Scatterplots: st. significant ind. vars (for selected decades)
+
+# tradeScat <- dembar %>%
+# filter(DECADE %in% c("Pre-WW1", "30s", "60s", "80s"))
+```
+
+```{r}
+# ggplot(tradeScat, aes(x = DISTANCL, y = XIJL)) +
+#   geom_point(shape = 1) +
+#   geom_smooth() +
+#   theme_stata() +
+#   facet_grid( ~ factor(DECADE, levels = c('Pre-WW1', '30s', '60s', '80s'))) +
+#   labs(x = "Distance between partners of a dyad",
+#   y = "Volume of exports",
+#   title = "Scatterplot: Export ~ Distance")
+```
+
+```{r}
+## Similarity of relations
+
+
+# ggplot(tradeScat, aes(x = TAUL, y = XIJL)) +
+#   geom_point(shape = 1) +
+#   geom_smooth() +
+#   theme_stata() +
+#   facet_grid( ~ factor(DECADE, levels = c('Pre-WW1', '30s', '60s', '80s'))) +
+#   labs(x = "Similarity of relations",
+#   y = "Volume of exports",
+#   title = "Scatterplot: Export ~ Similarity of relations")
+```
+
+```{r}
+## Regression
+## Replication for the table 1 (basic OLS, not the method of authors!)
+
+
+# tradeModel1 <- lm(XIJL ~ MIDL + TAUL + DEMDL + MULTIALL + BIALL + GNPIL + POPIL + CGNPJL + POPJL + DISTANCL, data = trade)
+# summary(tradeModel1)
+# library('broom')
+# MoTrade <- tidy(tradeModel1, conf.int = TRUE)
+# MoTrade
+```
+
+```{r}
+# ggplot(data = subset(MoTrade, !(MoTrade$term=="(Intercept)")),
+# mapping = aes(x = term, 
+# y = estimate,
+# ymin = conf.low,
+# ymax = conf.high)) + 
+# geom_point(size = 1,
+# color = "#fa626d") +
+# theme_clean() +
+# geom_pointrange(color = "#f9646c",
+# size = 0.5) +
+# scale_x_discrete(guide = guide_axis(angle = 50)) +
+# labs(x = "Predicting variables",
+# y = "Coefficient",
+# title = "Model 1. OLS",
+# subtitle = "Visual replication for Model 1") +
+# geom_hline(yintercept = 0,
+#                linetype = "dashed",
+#                color = "#f94552",
+#                size = 1.5)
+```
+
+```{r}
+## Graph of predicted values for the most powerful predictor (TAU)
+
+# library('ggeffects')
+# 
+# predTAU <- ggpredict(tradeModel1, terms = "TAUL")
+# predTAU
+```
+
+```{r}
+# ggplot(data = predTAU,
+#        mapping = aes(x = x,
+#                      y = predicted,
+#                      ymin = conf.low,
+#                      ymax = conf.high))  +
+#     geom_pointrange()  +
+#     theme_clean() +
+#     labs(x = "Similarity of relations",
+#          y = "Predicted values for Exports",
+#          title = "Graph for predicted values of the TAU variable")
+```
