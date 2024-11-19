@@ -96,7 +96,7 @@ export_volume <- trade_summary %>%
 ggplotly(export_volume)
 ```
 
-# Do democracies trade more with each other?
+# Do democracies trade more?
 
 One of the key assumptions tested in the study is that states with similar political regimes—particularly democratic dyads—are more likely to engage in trade. This hypothesis suggests that shared democratic values foster trust, reduce transaction costs, and create a favorable environment for trade partnerships.\
 \
@@ -170,21 +170,98 @@ ggplotly(dembar_faceted)
 
 # Do political rivals trade less?
 
+It is hypothesized that states with poor political relations trade less, as trading with a rival state may be seen as counterproductive and potentially empowering an opponent. Since "rivalry" lacks a direct measure, the authors use a binary proxy variable to indicate whether the states in a dyad experienced **militarized interstate disputes**.
+
+These disputes are recorded as occurring if at least one member of the dyad threatened to use military force against the other.
+
 ```{r}
-tradeDisp <- trade %>%
-  mutate(Dis = case_when(MIDL == 0 ~ "No disputes",
+trade <- trade %>%
+  mutate(Disputes = case_when(MIDL == 0 ~ "No disputes",
                          MIDL != 0 ~ "Disputes occured"))
-ggplot(data = tradeDisp,
-       mapping = aes(x = DECADE, y = XIJL, fill = Dis, color = Dis)) +
+
+trade %>%
+  count(Disputes) %>%
+  kable(
+    caption = "Number of observations per dyad type",
+    col.names = c("Dispute occured?", "Count"),
+    align = "lc"
+  )
+```
+
+```{r}
+tradeMID_year <- trade %>%
+  group_by(Disputes, YEAR) %>%
+  summarise(total_exports = sum(XIJL, na.rm = TRUE))
+
+
+MID <- ggplot(data = tradeMID_year,
+              mapping = aes(x = YEAR, y = total_exports, color = Disputes, group = Disputes)) +
+  geom_line(size = 1.2) +
+  theme_stata() +
+  labs(
+    x = "Year",
+    y = "Volume of exports",
+    title = "Exports of dyads: Do political conflicts affect trade?",
+    color = "Dispute Status"
+  ) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 0.5),
+        legend.position = 'bottom')
+
+ggplotly(MID)
+
+```
+
+```{r}
+tradeMID_DECADE <- trade %>%
+  group_by(Disputes, DECADE) %>%
+  summarise(total_exports = sum(XIJL, na.rm = TRUE))
+
+MID_DECADE <- ggplot(data = tradeMID_DECADE,
+              mapping = aes(x = DECADE, y = total_exports, fill = Disputes, color = Disputes)) +
   geom_col() +
   theme_stata() +
   labs(x = "Decades",
        y = "Volume of exports",
-       title = "Exports of dyads",
-       subtitle = "Factor of interstate militarized disputes") +
-  facet_wrap( ~ Dis, nrow = 1) +
+       title = "Exports of dyads: Do political conflicts affect trade?") +
+  facet_wrap( ~ Disputes, nrow = 1) +
   scale_x_discrete(guide = guide_axis(angle = 30), limits=periods) +
   theme(legend.position='none')
+
+ggplotly(MID_DECADE)
+```
+
+# Do states with similar interests trade more?
+
+It is commonly argued that states with similar political interests are more likely to trade with each other. Shared interests are expected to incentivize states to engage in economic collaboration, leading to more intensive trade relations.
+
+To measure the similarity of interests, the authors use the **TAU** indicator, which is based on the correlation of their alliance portfolios. TAU ranges from -1 (indicating complete dissimilarity in alliance portfolios) to 1 (indicating perfect similarity in alliance portfolios).
+
+```{r}
+TAU_hist <- ggplot(trade, aes(x = TAUL)) +
+  geom_histogram(bins = 15, fill = "navy", color = "black", alpha = 0.7) +
+  labs(x = "TAU Value", 
+       y = "Frequency", 
+       title = "Distribution of TAU (Common Interests) Values in the Dataset") +
+  theme_stata()
+
+ggplotly(TAU_hist)
+```
+
+A low TAU value means the two countries in the dyad have very different allies, so they likely have conflicting interests. For example, one might have military agreements with certain countries, while the other has no such agreements, showing they are not closely aligned. A high TAU value means the countries share many of the same allies, indicating they have similar interests and are more likely to cooperate with each other.
+
+\
+As we can see on a histogram, the largest portion of the sample has relatively low similarity of allies portfolio (\~ 0.2 - 0.3)
+
+```{r}
+TAU_hist <- ggplot(data = trade, aes(x = TAUL, y = XIJL)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "loess", color = "navy", se = FALSE) +
+  # geom_smooth(method = "loess", color = "navy", se = TRUE, fill = "lightblue", level = 0.90)
+  theme_minimal() +
+  labs(x = "Similarity of Interests (TAU)", y = "State Exports, mln. constant U.S. dollars)",
+       title = "Similarity of Interests Vs. Export Volume")
+
+ggplotly(TAU_hist)
 ```
 
 ```{r}
@@ -215,31 +292,6 @@ ggplot(data = tradeDisp,
 
 # tradeScat <- dembar %>%
 # filter(DECADE %in% c("Pre-WW1", "30s", "60s", "80s"))
-```
-
-```{r}
-# ggplot(tradeScat, aes(x = DISTANCL, y = XIJL)) +
-#   geom_point(shape = 1) +
-#   geom_smooth() +
-#   theme_stata() +
-#   facet_grid( ~ factor(DECADE, levels = c('Pre-WW1', '30s', '60s', '80s'))) +
-#   labs(x = "Distance between partners of a dyad",
-#   y = "Volume of exports",
-#   title = "Scatterplot: Export ~ Distance")
-```
-
-```{r}
-## Similarity of relations
-
-
-# ggplot(tradeScat, aes(x = TAUL, y = XIJL)) +
-#   geom_point(shape = 1) +
-#   geom_smooth() +
-#   theme_stata() +
-#   facet_grid( ~ factor(DECADE, levels = c('Pre-WW1', '30s', '60s', '80s'))) +
-#   labs(x = "Similarity of relations",
-#   y = "Volume of exports",
-#   title = "Scatterplot: Export ~ Similarity of relations")
 ```
 
 ```{r}
