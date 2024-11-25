@@ -44,6 +44,7 @@ library("magrittr")
 library('ggthemes')
 library("plotly")
 library('knitr')
+library('ggiraph')
 
 trade <- read.csv(file = "Trade.csv", header = TRUE)
 # knitr::kable(head(trade))
@@ -151,23 +152,6 @@ dembar_faceted <- ggplot(data = dyad_summary,
 ggplotly(dembar_faceted)
 ```
 
-```{r}
-## Histograms. Distribution of ind. variables
-## 5 Histogram for Similarity of relations
-
-# TAUL <- ggplot(data = trade,
-#        mapping = aes(x = TAUL)) +
-#   geom_histogram(bins=15,
-#   color = "#f94552",
-#   fill = "#fa626d",
-#   alpha = 0.5) + 
-#   labs(x = "Similarity of relations", y = "Distribution", title = "Similarity of relations",
-#   subtitle = "TAUL independent variable") +
-#   theme_economist()
-# 
-# ggplotly(TAUL)
-```
-
 # Do political rivals trade less?
 
 It is hypothesized that states with poor political relations trade less, as trading with a rival state may be seen as counterproductive and potentially empowering an opponent. Since "rivalry" lacks a direct measure, the authors use a binary proxy variable to indicate whether the states in a dyad experienced **militarized interstate disputes**.
@@ -264,77 +248,256 @@ TAU_hist <- ggplot(data = trade, aes(x = TAUL, y = XIJL)) +
 ggplotly(TAU_hist)
 ```
 
+# Do military allies trade more?
+
+Countries that are military allies often have stronger economic ties. When two countries are part of the same military alliance, they are expected to trust each other and collaborate more, reducing political risks that might otherwise hinder trade.
+
+The authors use a binary variable to indicate whether countries in a trading dyad have a formal alliance or not. Additionally, they introduce an interaction term to account for the global power structure, distinguishing between a **Multipolar world** (before World War II) and a **Bipolar world** (after World War II). Hypothetically, alliances in a multipolar world are not expected to significantly impact trade, whereas alliances in a bipolar world are thought to have a stronger positive effect.
+
 ```{r}
-## Faceted graph for distance between nations in the trading dyad
-# mean(trade$DISTANCL)
+trade <- trade %>%
+  mutate(
+    Alliance = case_when(
+      ALLIAL == 0 ~ "No alliance",
+      ALLIAL != 0 ~ "Alliance"
+    ),
+    Period = case_when(
+      as.numeric(as.character(YEAR)) < 1947 ~ "Pre-WW2",
+      as.numeric(as.character(YEAR)) >= 1947 ~ "Post-WW2"
+    )
+  )
+
+alliance_summary <- trade %>%
+  group_by(Alliance, Period) %>%
+  summarize(count = n(), .groups = "drop")
 ```
 
 ```{r}
-# tradeDist <- trade %>%
-#   mutate(Far = case_when(DISTANCL <= 7.6 ~ "Close",
-#                          DISTANCL > 7.6 ~ "Far"))
-# ggplot(data = tradeDist,
-#        mapping = aes(x = XIJL, y = DECADE, color = Far, fill = Far)) +
-#   geom_col() +
-#   theme_stata() +
-#   labs(x = "Volume of exports",
-#        y = "Decade",
-#        title = "Exports of dyads",
-#        subtitle = "Factor of distance between trading partners") +
-#   facet_wrap( ~ Far,
-#               nrow = 1) +
-#   scale_y_discrete(guide = guide_axis(angle = 30), limits=periods) +
-#   theme(legend.position='none')
+alliance_summary$Period <- factor(alliance_summary$Period, levels = c("Pre-WW2", "Post-WW2"))
+
+ALLIAL_barplot <- ggplot(alliance_summary, aes(x = Period, y = count, fill = Alliance)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = c("lightblue", "steelblue")) +
+  labs(title = "Alliance: Dyad observations before and after WW2",
+       x = "Period", y = "Count of Dyads") +
+  theme_stata() +
+  theme(legend.title = element_text(size = 12), 
+        legend.text = element_text(size = 10))
+
+ggplotly(ALLIAL_barplot)
 ```
 
 ```{r}
-## Scatterplots: st. significant ind. vars (for selected decades)
+alliance_volume <- trade %>%
+  group_by(YEAR, Alliance) %>%
+  summarize(avg_exports = mean(XIJL, na.rm = TRUE), .groups = "drop")
 
-# tradeScat <- dembar %>%
-# filter(DECADE %in% c("Pre-WW1", "30s", "60s", "80s"))
+alliance_volume$YEAR <- as.numeric(as.character(alliance_volume$YEAR))
+
+ALLIAL_volume <- ggplot(alliance_volume, aes(x = YEAR, y = avg_exports, color = Alliance, group = Alliance)) +
+  geom_line() +
+  geom_vline(xintercept = c(1939, 1947), linetype = "dashed", color = "red", size = 1)
+  # geom_rect(aes(xmin = 1939, xmax = 1947, ymin = -Inf, ymax = Inf),
+  #           fill = "red", alpha = 0.2) +
+  labs(title = "Time Series of Exports by Alliance Status",
+       x = "Year",
+       y = "Exports (in millions of USD)",
+       color = "Alliance Status") +
+  scale_color_manual(values = c("lightblue", "steelblue")) +
+  theme_stata() + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 0.5),
+        legend.position = 'bottom')
+
+ggplotly(ALLIAL_volume)
 ```
 
 ```{r}
-## Regression
-## Replication for the table 1 (basic OLS, not the method of authors!)
+library(ggplot2)
+library(ggiraph)
 
+# Create the basic line plot with interactive tooltips
+ALLIAL_volume <- ggplot(alliance_volume, aes(x = YEAR, y = avg_exports, color = Alliance, group = Alliance)) +
+  geom_line_interactive(aes(tooltip = paste("Year: ", YEAR, "<br>Exports: ", round(avg_exports, 2))), size = 1) +  # Add interactive tooltips to lines
+  labs(title = "Time Series of Exports by Alliance Status",
+       x = "Year",
+       y = "Exports (in millions of USD)",
+       color = "Alliance Status") +
+  scale_color_manual(values = c("lightblue", "steelblue")) +
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 0.5),
+        legend.position = 'bottom') +
+  # Add vertical lines at 1937 and 1947
+  geom_vline(xintercept = c(1937, 1947), linetype = "dashed", color = "red", size = 1)
 
-# tradeModel1 <- lm(XIJL ~ MIDL + TAUL + DEMDL + MULTIALL + BIALL + GNPIL + POPIL + CGNPJL + POPJL + DISTANCL, data = trade)
-# summary(tradeModel1)
-# library('broom')
-# MoTrade <- tidy(tradeModel1, conf.int = TRUE)
-# MoTrade
+# Convert the plot to an interactive ggiraph plot
+interactive_plot <- girafe(ggobj = ALLIAL_volume)
+
+# Show the plot
+interactive_plot
+
+```
+
+# Gravity Model of International Trade
+
+For testing the hypotheses, the authors employ a **gravity model of international trade**, augmented with variables for the political determinants discussed earlier (democracy, rivalry, alliances, and similarity of interests). The gravity model is a well-established framework in economics that predicts the volume of trade flows between two countries based on three core components:
+
+1.  **Economic Size**:
+
+    -   Measured as **Gross National Product (GNP)** in this study, economic size captures the production and consumption potential of the trading countries.
+
+    -   Larger economies are expected to trade more due to their greater capacity to produce goods and services (supply side) and their higher consumer demand (demand side).
+
+2.  **Physical Distance**:
+
+    -   Distance acts as a proxy for trade costs, including transportation expenses, communication barriers, and time lags.
+
+    -   Greater distances typically reduce trade flows, as higher costs make trade less competitive.
+
+3.  **Population**:
+
+    -   The authors include population to account for its dual role:
+
+        -   **Supply Side**: Larger populations may increase production capacity, especially in labor-intensive industries.
+
+        -   **Demand Side**: Larger domestic markets may reduce the need for trade, as countries with sizable populations can meet more of their needs internally.
+
+    -   In this study, population is expected to negatively correlate with trade, reflecting the potential self-sufficiency of larger nations.
+
+The authors extend the model by introducing political variables to examine how non-economic factors influence trade flows. These additions enable the gravity model to test hypotheses about how democracy, political rivalry, alliances, and shared interests shape international economic relationships.
+
+## GNP and Trade
+
+```{r}
+# Fit a regression model
+model <- lm(XIJL ~ GNPIL + CGNPJL, data = trade)
+
+# grid of values for GNPIL and CGNPJL
+grid <- expand.grid(
+  GNPIL = seq(min(trade$GNPIL, na.rm = TRUE), max(trade$GNPIL, na.rm = TRUE), length.out = 50),
+  CGNPJL = seq(min(trade$CGNPJL, na.rm = TRUE), max(trade$CGNPJL, na.rm = TRUE), length.out = 50)
+)
+
+# Predict trade volume for the grid
+grid$XIJL <- predict(model, newdata = grid)
+
+# Create a matrix for the surface
+surface_matrix <- matrix(grid$XIJL, nrow = 50, ncol = 50)
+
+# Add the surface to the 3D scatterplot
+plot_ly() %>%
+  add_markers(data = trade, x = ~GNPIL, y = ~CGNPJL, z = ~XIJL,
+              type = 'scatter3d', mode = 'markers',
+              marker = list(size = 3, color = ~XIJL, colorscale = 'Viridis')) %>%
+  add_surface(x = ~unique(grid$GNPIL), y = ~unique(grid$CGNPJL), z = ~surface_matrix,
+              colorscale = 'Blues', opacity = 0.5) %>%
+  layout(scene = list(
+    xaxis = list(title = "GNP of Exporter"),
+    yaxis = list(title = "GNP of Importer"),
+    zaxis = list(title = "Trade Volume")))
+
 ```
 
 ```{r}
-# ggplot(data = subset(MoTrade, !(MoTrade$term=="(Intercept)")),
-# mapping = aes(x = term, 
-# y = estimate,
-# ymin = conf.low,
-# ymax = conf.high)) + 
-# geom_point(size = 1,
-# color = "#fa626d") +
-# theme_clean() +
-# geom_pointrange(color = "#f9646c",
-# size = 0.5) +
-# scale_x_discrete(guide = guide_axis(angle = 50)) +
-# labs(x = "Predicting variables",
-# y = "Coefficient",
-# title = "Model 1. OLS",
-# subtitle = "Visual replication for Model 1") +
-# geom_hline(yintercept = 0,
-#                linetype = "dashed",
-#                color = "#f94552",
-#                size = 1.5)
+library(ggplot2)
+library(ggiraph)
+
+# Interactive Scatterplot: XIJL vs Exporter GNP
+scatter_exporter <- ggplot(trade, aes(x = GNPIL, y = XIJL)) +
+  geom_point_interactive(aes(tooltip = paste("Exporter GNP:", GNPIL, "<br>Trade Volume:", XIJL)),
+                         alpha = 0.6, color = "darkblue") +
+  geom_smooth(method = "lm", color = "blue", se = FALSE) +
+  labs(x = "GNP of Exporter", y = "Trade Volume (XIJL)",
+       title = "Trade Volume vs Exporter GNP") +
+  theme_minimal()
+
+# Interactive Scatterplot: XIJL vs Importer GNP
+scatter_importer <- ggplot(trade, aes(x = CGNPJL, y = XIJL)) +
+  geom_point_interactive(aes(tooltip = paste("Importer GNP:", CGNPJL, "<br>Trade Volume:", XIJL)),
+                         alpha = 0.6, color = "darkred") +
+  geom_smooth(method = "lm", color = "red", se = FALSE) +
+  labs(x = "GNP of Importer", y = "Trade Volume (XIJL)",
+       title = "Trade Volume vs Importer GNP") +
+  theme_minimal()
+
+# Render each plot interactively with ggiraph
+girafe(
+  ggobj = scatter_exporter + scatter_importer,
+  width_svg = 10, height_svg = 5
+)
+```
+
+## Distance and Trade
+
+```{r}
+# Create the scatterplot
+scatter_distance <- ggplot(trade, aes(x = DISTANCL, y = XIJL)) +
+  geom_point_interactive(aes(tooltip = paste("Distance:", DISTANCL, "<br>Trade Volume:", XIJL)),
+                         alpha = 0.6, color = "blue") +
+  geom_smooth(method = "lm", color = "darkblue", se = TRUE) +
+  labs(x = "Log-Distance", y = "Trade Volume (XIJL)",
+       title = "Distance vs Trade Volume") +
+  theme_minimal()
+
+# scatter_distance
+girafe(ggobj = scatter_distance, width_svg = 10, height_svg = 5)
+
+```
+
+## Population and Trade
+
+```{r}
+
+# Scatterplot: XIJL vs Exporter Population
+scatter_exporter_pop <- ggplot(trade, aes(x = POPIL, y = XIJL)) +
+  geom_point(alpha = 0.6, color = "darkblue") +
+  geom_smooth(method = "lm", color = "blue", se = FALSE) +
+  labs(x = "Exporter Population", y = "Trade Volume (XIJL)",
+       title = "Trade Volume vs Exporter Population") +
+  theme_minimal()
+
+# Scatterplot: XIJL vs Importer Population
+scatter_importer_pop <- ggplot(trade, aes(x = POPJL, y = XIJL)) +
+  geom_point(alpha = 0.6, color = "darkred") +
+  geom_smooth(method = "lm", color = "red", se = FALSE) +
+  labs(x = "Importer Population", y = "Trade Volume (XIJL)",
+       title = "Trade Volume vs Importer Population") +
+  theme_minimal()
+
+# Combine the two scatterplots side by side
+girafe(ggobj = scatter_exporter_pop + scatter_importer_pop, width_svg = 10, height_svg = 5)
+
+```
+
+## LM + Panel-Corrected Standard Errors
+
+```{r}
+library(pcse)
+library(stargazer)
+
+gmt_full <- lm(XIJL ~ MIDL + TAUL + DEMDL + MULTIALL + BIALL + GNPIL + POPIL + CGNPJL + POPJL + DISTANCL, data = trade)
+
+pcse_gmt_full <- pcse(gmt_full,
+                      groupN = trade$DYAD,
+                      groupT = trade$YEAR)
+
+# Summarize the results
+summary(pcse_gmt_full)
+
+
 ```
 
 ```{r}
-## Graph of predicted values for the most powerful predictor (TAU)
+# install.packages("plm")
+# install.packages("pcse")
 
-# library('ggeffects')
-# 
-# predTAU <- ggpredict(tradeModel1, terms = "TAUL")
-# predTAU
+library(plm)
+
+trade <- pdata.frame(trade, index = c("DYAD", "YEAR"))
+
+
+
+summary(model_pcse)
+
 ```
 
 ```{r}
