@@ -27,7 +27,19 @@ Using 20th-century data on trade volumes among major political powers, the autho
 
 ## Data
 
-The dataset includes annual observations of trade flows between all directed pairs of major powers (dyads) from 1907 to 1990, excluding the years during the two world wars and the year immediately following each war. The major powers include the United States, the United Kingdom, France, Germany, Russia and Italy.
+The dataset includes annual observations of trade flows between all directed pairs of major powers (dyads) from 1907 to 1990, excluding the years during the two world wars and the year immediately following each war. The major powers include the United States, the United Kingdom, France, Germany, Russia and Italy. Since the dataset observed both multiple units and a prolonged period of time, it presents the case of a **time-series cross-sectional data (TSCS)**.
+
+The dataset is prepared specifically for regression analysis and structured for time-series cross-sectional modeling. The dependent variable, trade flows (**`XIJL`**), and key independent variables, such as GDP (**`GNPIL`** and **`CGNPJL`**), population (**`POPIL`** and **`POPJL`**), and distance (**`DISTANCL`**), are presented in **log-transformed** form.
+
+The dataset also includes political variables of interest:
+
+-   **`MIDL`**: A binary indicator for the presence of militarized disputes within the dyad.
+
+-   **`DEMDL`**: A binary indicator for whether both members of the dyad are democracies.
+
+-   **`ALLIAL`**, **`MULTIALL`**, **`BIALL`**: Binary indicators representing the existence of alliances (**`ALLIAL`**), with distinctions between multipolar (**`MULTIALL`**) and bipolar (**`BIALL`**) geopolitical systems.
+
+-   **`TAUL`**: A measure of similarity in the foreign policy interests of the dyad, scaled between 0 and 1.
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(
@@ -40,7 +52,7 @@ knitr::opts_chunk$set(
 ```{r}
 library('dplyr')
 library('ggplot2')
-library("magrittr")
+library('magrittr')
 library('ggthemes')
 library("plotly")
 library('knitr')
@@ -398,10 +410,8 @@ plot_ly() %>%
 ```
 
 ```{r}
-library(ggplot2)
-library(ggiraph)
+library(patchwork)
 
-# Interactive Scatterplot: XIJL vs Exporter GNP
 scatter_exporter <- ggplot(trade, aes(x = GNPIL, y = XIJL)) +
   geom_point_interactive(aes(tooltip = paste("Exporter GNP:", GNPIL, "<br>Trade Volume:", XIJL)),
                          alpha = 0.6, color = "darkblue") +
@@ -410,7 +420,6 @@ scatter_exporter <- ggplot(trade, aes(x = GNPIL, y = XIJL)) +
        title = "Trade Volume vs Exporter GNP") +
   theme_minimal()
 
-# Interactive Scatterplot: XIJL vs Importer GNP
 scatter_importer <- ggplot(trade, aes(x = CGNPJL, y = XIJL)) +
   geom_point_interactive(aes(tooltip = paste("Importer GNP:", CGNPJL, "<br>Trade Volume:", XIJL)),
                          alpha = 0.6, color = "darkred") +
@@ -419,11 +428,8 @@ scatter_importer <- ggplot(trade, aes(x = CGNPJL, y = XIJL)) +
        title = "Trade Volume vs Importer GNP") +
   theme_minimal()
 
-# Render each plot interactively with ggiraph
-girafe(
-  ggobj = scatter_exporter + scatter_importer,
-  width_svg = 10, height_svg = 5
-)
+girafe(ggobj = scatter_exporter + scatter_importer, width_svg = 10, height_svg = 5)
+
 ```
 
 ## Distance and Trade
@@ -471,44 +477,100 @@ girafe(ggobj = scatter_exporter_pop + scatter_importer_pop, width_svg = 10, heig
 ## LM + Panel-Corrected Standard Errors
 
 ```{r}
-library(pcse)
+missing_summary <- data.frame(
+  Variable = names(trade),
+  Missing_Count = colSums(is.na(trade)),
+  Missing_Percentage = colMeans(is.na(trade)) * 100
+)
+
+missing_summary %>%
+  arrange(desc(Missing_Count)) %>%
+  knitr::kable(
+    format = "html",
+    caption = "Missing Values Summary",
+    col.names = c("Variable", "Missing Count", "Missing Percentage (%)"),
+    digits = 2
+  )
+```
+
+```{r}
+trade_clean <- na.omit(trade)
+```
+
+```{r}
 library(stargazer)
 
-gmt_full <- lm(XIJL ~ MIDL + TAUL + DEMDL + MULTIALL + BIALL + GNPIL + POPIL + CGNPJL + POPJL + DISTANCL, data = trade)
+gmt_full <- lm(XIJL ~ MIDL + TAUL + DEMDL + MULTIALL + BIALL + GNPIL + POPIL + CGNPJL + POPJL + DISTANCL, data = trade_clean)
 
-pcse_gmt_full <- pcse(gmt_full,
-                      groupN = trade$DYAD,
-                      groupT = trade$YEAR)
-
-# Summarize the results
-summary(pcse_gmt_full)
-
-
+stargazer(gmt_full, type = "text")
 ```
 
 ```{r}
-# install.packages("plm")
-# install.packages("pcse")
+library(broom)
 
-library(plm)
+# Extract coefficients and confidence intervals
+model_results <- tidy(gmt_full, conf.int = TRUE)
 
-trade <- pdata.frame(trade, index = c("DYAD", "YEAR"))
-
-
-
-summary(model_pcse)
-
+# Remove the intercept to focus on predictor variables
+model_results <- subset(model_results, term != "(Intercept)")
 ```
 
 ```{r}
-# ggplot(data = predTAU,
-#        mapping = aes(x = x,
-#                      y = predicted,
-#                      ymin = conf.low,
-#                      ymax = conf.high))  +
-#     geom_pointrange()  +
-#     theme_clean() +
-#     labs(x = "Similarity of relations",
-#          y = "Predicted values for Exports",
-#          title = "Graph for predicted values of the TAU variable")
+interactive_plot <- ggplot(data = model_results, 
+                           mapping = aes(x = term, 
+                                         y = estimate, 
+                                         ymin = conf.low, 
+                                         ymax = conf.high,
+                                         tooltip = paste0("Variable: ", term, 
+                                                          "\nEstimate: ", round(estimate, 3), 
+                                                          "\nConf. Low: ", round(conf.low, 3), 
+                                                          "\nConf. High: ", round(conf.high, 3)))) +
+  geom_point_interactive(size = 3, color = "#fa626d") +  # Interactive points
+  geom_pointrange_interactive(color = "#f9646c", size = 0.5) +  # Interactive error bars
+  geom_hline(yintercept = 0, linetype = "dashed", color = "#f94552", size = 1.2) +  # Reference line
+  scale_x_discrete(guide = guide_axis(angle = 50)) +  # Rotate x-axis labels
+  labs(x = "Xs", 
+       y = "Coefficient Estimate", 
+       title = "Model Coefficients", 
+       subtitle = "Linear Regression Results with Interactivity") +
+  theme_minimal()
+
+# Render the plot as an interactive ggiraph plot
+girafe(ggobj = interactive_plot, 
+       width_svg = 10, 
+       height_svg = 5)
+```
+
+Time-series cross-sectional data combines two dimensions:
+
+-   **Cross-sectional**: Observations for multiple units (dyads of countries).
+
+-   **Time-series**: Observations repeated over time (annual trade flows from 1907 to 1990).
+
+Such data structure is uniquely positioned to deliver insights on both temporal variance in trade valumes and variance across different countries. However, it cannot be handled by the basic OLS regression model due to several inherent limitations:
+
+1.  **Heteroskedasticity**.
+
+    -   TSCS data often exhibit panel heteroskedasticity, where the error variance differs across cross-sectional units (e.g., countries or regions). This means that each unit may have its own error variance, violating the assumption of constant variance across observations.
+
+    -   **Trade flows vary significantly by economic size**: Larger economies experience higher trade volumes and greater variability.
+
+    -   **Geopolitical and temporal factors**: Events like wars, alliances, and depressions have unequal effects across dyads.
+
+    -   **Economic data's natural structure**: Nonlinear growth leads to variance increasing with economic size.
+
+    -   **Modeling limitations**: Unobserved variables and measurement errors exacerbate variance differences.
+
+2.  **Serial Correlation**.
+
+    -   Errors in TSCS data are often serially correlated, meaning that the errors for a given cross-sectional unit are correlated with previous errors for that unit. This violates the assumption that error terms should be uncorrelated over time.
+
+3.  **Cross-Sectional Dependence**.
+
+    -   In TSCS data, errors for one cross-sectional unit may be correlated with errors for other units in the same time period. This contemporaneous correlation violates the assumption that error terms should be independent across observations.
+
+    -   
+
+```{r}
+
 ```
